@@ -32,7 +32,7 @@ jobs:
             -H 'accept: application/json, text/event-stream' \
             --data '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
             https://mcp.shauryaswebsites.com/mcp | tee /tmp/tools.json
-          python3 -c "import json; d=json.load(open('/tmp/tools.json')); assert [x['name'] for x in d['result']['tools']] == ['triage_all_new_feedback']"
+          python3 -c "import json; d=json.load(open('/tmp/tools.json')); assert [x['name'] for x in d['result']['tools']] == ['triage_all_new_feedback','list_feedback']"
       - name: Verify live Feedback access without printing submissions
         run: |
           set -euo pipefail
@@ -51,4 +51,22 @@ jobs:
           assert isinstance(p['items'], list)
           assert all('email' not in item for item in p['items'])
           print('Live Feedback read succeeded. Entries:',p['count'],'Total:',p['total'],'Truncated:',p['truncated'])
+          PY
+      - name: Verify status-filtered production feedback without logging private content
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_feedback","arguments":{"status":"Done"}}}' \
+            https://mcp.shauryaswebsites.com/mcp > /tmp/production-feedback.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/production-feedback.json'))
+          assert r['result'].get('isError') is False, 'Status-filtered Feedback query failed'
+          p=json.loads(r['result']['content'][0]['text'])
+          assert p['status_filter']=='Done'
+          assert isinstance(p['items'],list)
+          assert all('email' not in row and row['status']=='Done' for row in p['items'])
+          print('Production feedback query passed. Count:',p['count'],'Total:',p['total'],'Truncated:',p['truncated'])
           PY
