@@ -1,4 +1,4 @@
-name: Verify live MCP Worker
+name: Verify production MCP custom domain
 on:
   push:
     branches: [main]
@@ -13,7 +13,7 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
-            https://mcp.shipranakul.workers.dev/health | tee /tmp/health.json
+            https://mcp.shauryaswebsites.com/health | tee /tmp/health.json
           python3 -c "import json; assert json.load(open('/tmp/health.json'))['ok'] is True"
       - name: Verify MCP handshake
         run: |
@@ -22,7 +22,7 @@ jobs:
             -H 'content-type: application/json' \
             -H 'accept: application/json, text/event-stream' \
             --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"live-smoke","version":"1.0.0"}}}' \
-            https://mcp.shipranakul.workers.dev/mcp | tee /tmp/initialize.json
+            https://mcp.shauryaswebsites.com/mcp | tee /tmp/initialize.json
           python3 -c "import json; assert 'protocolVersion' in json.load(open('/tmp/initialize.json'))['result']"
       - name: Verify tool discovery
         run: |
@@ -31,7 +31,7 @@ jobs:
             -H 'content-type: application/json' \
             -H 'accept: application/json, text/event-stream' \
             --data '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-            https://mcp.shipranakul.workers.dev/mcp | tee /tmp/tools.json
+            https://mcp.shauryaswebsites.com/mcp | tee /tmp/tools.json
           python3 -c "import json; d=json.load(open('/tmp/tools.json')); assert [x['name'] for x in d['result']['tools']] == ['triage_all_new_feedback']"
       - name: Verify live Feedback access without printing submissions
         run: |
@@ -40,7 +40,7 @@ jobs:
             -H 'content-type: application/json' \
             -H 'accept: application/json, text/event-stream' \
             --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"triage_all_new_feedback","arguments":{}}}' \
-            https://mcp.shipranakul.workers.dev/mcp > /tmp/triage.json
+            https://mcp.shauryaswebsites.com/mcp > /tmp/triage.json
           python3 - <<'PY'
           import json
           r=json.load(open('/tmp/triage.json'))
