@@ -1,12 +1,13 @@
 # Shaurya's Websites MCP
 
-One MCP connection for Shaurya's Websites, starting with **one complete use case**: **“Triage all new feedback.”**
+One MCP connection for Shaurya's Websites, starting with two lightweight read-only tools for the Feedback board.
 
 ## v1 capability
 
 - MCP Streamable HTTP endpoint: `https://mcp.shauryaswebsites.com/mcp`
-- One tool: `triage_all_new_feedback`, no arguments.
-- Reads **Inbox / New Feedback** cards from the **existing Feedback Durable Object**.
+- `triage_all_new_feedback`: inspect New Feedback (Inbox), no arguments.
+- `list_feedback`: list cards by status, with an optional `status` argument (`Inbox`, `Planned`, `In Progress`, `Done`, `Not Planned`, `all`; default `all`). `Done` corresponds to **Available in Production**.
+- Reads feedback cards from the **existing Feedback Durable Object**; `list_feedback` can retrieve any Kanban column.
 - Returns feedback ID, message, site, status and timestamps. **Never returns email addresses.**
 - Read-only: recommends classification, priority, duplicates and next steps in ChatGPT; never moves cards or changes feedback.
 - Paginates the Inbox up to 2,000 items, marking results as truncated if larger.
@@ -21,7 +22,7 @@ ChatGPT
         -> existing FeedbackStore object in Worker "feedback"
 ```
 
-The MCP Worker has one **read-only tool registry**, so future game or account tools can be registered with their own permissions and data-source bindings. The Feedback Worker remains authoritative for its data. The `feedback` Worker includes an email-free `/list-new` internal Durable Object query.
+The MCP Worker has one **read-only tool registry**, so future game or account tools can be registered with their own permissions and data-source bindings. The Feedback Worker remains authoritative for its data. The `feedback` Worker includes email-free `/list-new` and `/list-filtered` internal Durable Object queries.
 
 ### Important security boundary
 
