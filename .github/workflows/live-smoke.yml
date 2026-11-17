@@ -69,4 +69,22 @@ jobs:
           assert isinstance(p['items'],list)
           assert all('email' not in row and row['status']=='Done' for row in p['items'])
           print('Production feedback query passed. Count:',p['count'],'Total:',p['total'],'Truncated:',p['truncated'])
+          print('PRODUCTION_ITEMS_JSON='+json.dumps(p['items'],ensure_ascii=False))
+          PY
+      - name: Verify and report Will Not Do feedback (public fields only)
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"list_feedback","arguments":{"status":"Not Planned"}}}' \
+            https://mcp.shauryaswebsites.com/mcp > /tmp/not-planned-feedback.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/not-planned-feedback.json'))
+          assert r['result'].get('isError') is False
+          p=json.loads(r['result']['content'][0]['text'])
+          assert p['status_filter']=='Not Planned' and not p['truncated']
+          assert all('email' not in row and row['status']=='Not Planned' for row in p['items'])
+          print('NOT_PLANNED_ITEMS_JSON='+json.dumps(p['items'],ensure_ascii=False))
           PY
