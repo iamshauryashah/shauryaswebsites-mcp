@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shauryaswebsites-mcp",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-16",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "mcp.shauryaswebsites.com",
+      "custom_domain": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FEEDBACK_STORE",
+        "class_name": "FeedbackStore",
+        "script_name": "feedback"
+      }
+    ]
+  }
+}
