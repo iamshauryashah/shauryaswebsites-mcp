@@ -12,12 +12,13 @@ function env(rows = []) {
         assert.equal(id, 'global-id');
         return {
           async fetch(url, init) {
-            assert.equal(url, 'https://feedback-store.internal/list-new');
+            assert.ok(['https://feedback-store.internal/list-new','https://feedback-store.internal/list-filtered'].includes(url));
             assert.equal(init.method, 'POST');
-            const { offset, limit } = JSON.parse(init.body);
-            calls.push({ offset, limit });
-            const items = rows.slice(offset, offset + limit);
-            return Response.json({ items, total: rows.length });
+            const { offset, limit, status } = JSON.parse(init.body);
+            calls.push({ offset, limit, route: new URL(url).pathname, status });
+            const filtered = new URL(url).pathname === '/list-new' ? rows.filter(row => row.status === 'Inbox') : status === 'all' ? rows : rows.filter(row => row.status === status);
+            const items = filtered.slice(offset, offset + limit);
+            return Response.json({ items, total: filtered.length });
           }
         };
       }
@@ -41,7 +42,7 @@ test('MCP initialize and tool listing', async () => {
   const initialized = await (await handleMcp(request('initialize', {}),e)).json();
   assert.equal(initialized.result.protocolVersion, '2025-06-18');
   const listing = await (await handleMcp(request('tools/list', {}),e)).json();
-  assert.deepEqual(listing.result.tools.map(t=>t.name), ['triage_all_new_feedback']);
+  assert.deepEqual(listing.result.tools.map(t=>t.name), ['triage_all_new_feedback','list_feedback']);
   assert.equal(listing.result.tools[0].annotations.readOnlyHint, true);
 });
 test('triage reads Inbox without exposing emails, across multiple pages', async () => {
@@ -68,6 +69,35 @@ test('large queues report explicit truncation', async () => {
   assert.equal(payload.count,2000);
   assert.equal(payload.total,2001);
   assert.equal(payload.truncated,true);
+});
+test('list_feedback retrieves production and all statuses without emails', async () => {
+  const rows = [
+    {id:'prod-1',message:'Released',status:'Done',site:'gerry.shauryaswebsites.com',email:'private@example.com'},
+    {id:'new-1',message:'New',status:'Inbox',site:'soccermanager.shauryaswebsites.com',email:'other@example.com'},
+    {id:'backlog-1',message:'Later',status:'Planned',site:'gerry.shauryaswebsites.com',email:'third@example.com'}
+  ];
+  const e = env(rows);
+  const production = await (await handleMcp(request('tools/call',{name:'list_feedback',arguments:{status:'Done'}}),e)).json();
+  const p = JSON.parse(production.result.content[0].text);
+  assert.equal(p.status_filter,'Done');
+  assert.equal(p.total,1);
+  assert.deepEqual(p.items.map(i=>i.id),['prod-1']);
+  assert.equal(JSON.stringify(p).includes('@example.com'),false);
+  const all = await (await handleMcp(request('tools/call',{name:'list_feedback',arguments:{}}),e)).json();
+  const a = JSON.parse(all.result.content[0].text);
+  assert.equal(a.total,3);
+  assert.equal(a.status_filter,'all');
+  assert.equal(a.items.length,3);
+  assert.equal(JSON.stringify(a).includes('@example.com'),false);
+  assert.deepEqual(e.calls.filter(c=>c.route==='/list-filtered').map(c=>c.status),['Done','all']);
+});
+test('list_feedback rejects invalid status and unexpected arguments', async () => {
+  const e=env();
+  for (const args of [{status:'Available in Production'},{status:'Invalid'},{admin:true},{status:42}]) {
+    const res=await (await handleMcp(request('tools/call',{name:'list_feedback',arguments:args}),e)).json();
+    assert.equal(res.error.code,-32602);
+  }
+  assert.equal(e.calls.length,0);
 });
 test('invalid tool, arguments and cross-site origins are rejected', async () => {
   const e=env();
