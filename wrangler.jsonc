@@ -18,5 +18,11 @@
         "script_name": "feedback"
       }
     ]
-  }
+  },
+  "services": [
+    {
+      "binding": "AUTH_SERVICE",
+      "service": "user-management"
+    }
+  ]
 }
