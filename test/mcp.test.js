@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { handleMcp } from '../src/index.js';
+import worker, { handleMcp, updateFeedbackStatus } from '../src/index.js';
 
 function env(rows = [], admin = false) {
   const calls = [];
@@ -8,8 +8,9 @@ function env(rows = [], admin = false) {
     calls,
     AUTH_SERVICE: {
       async fetch(request) {
-        assert.equal(new URL(request.url).pathname, '/api/me');
-        return Response.json(admin ? {isAdmin:true,userType:'admin'} : {isAdmin:false,userType:'standard'});
+        assert.equal(new URL(request.url).pathname, '/api/mcp/write-access');
+        assert.match(request.headers.get('Authorization')||'', /^Bearer /);
+        return Response.json({allowed:admin});
       }
     },
     FEEDBACK_STORE: {
@@ -109,75 +110,63 @@ test('list_feedback rejects invalid status and unexpected arguments', async () =
   }
   assert.equal(e.calls.length,0);
 });
-test('write tool is discoverable but denied without authenticated admin session',async () => {
-  const e=env([{id:'123e4567-e89b-12d3-a456-426614174000',status:'Inbox'}]);
+test('OAuth resource metadata points to the central identity issuer', async () => {
+  const root = await worker.fetch(new Request('https://mcp.shauryaswebsites.com/.well-known/oauth-protected-resource'),env());
+  assert.equal(root.status,200);
+  const data=await root.json();
+  assert.equal(data.resource,'https://mcp.shauryaswebsites.com/mcp');
+  assert.deepEqual(data.authorization_servers,['https://auth.shauryaswebsites.com/api/auth']);
+  assert.ok(data.scopes_supported.includes('mcp:feedback.write'));
+  const alias=await worker.fetch(new Request('https://mcp.shauryaswebsites.com/.well-known/oauth-protected-resource/mcp'),env());
+  assert.equal(alias.status,200);
+});
+test('MCP write tool is discoverable but rejects anonymous and cookie-only calls',async () => {
+  const e=env([{id:'123e4567-e89b-12d3-a456-426614174000',status:'Inbox'}],true);
   const listing=await (await handleMcp(request('tools/list', {}),e)).json();
   assert.deepEqual(listing.result.tools.map(t=>t.name),['triage_all_new_feedback','list_feedback','update_feedback_status']);
   assert.equal(listing.result.tools[2].annotations.readOnlyHint,false);
-  const response=await (await handleMcp(request('tools/call',{name:'update_feedback_status',arguments:{id:'123e4567-e89b-12d3-a456-426614174000',status:'Done'}}),e)).json();
-  assert.equal(response.result.isError,true);
-  assert.match(response.result.content[0].text,/Administrator session required/);
+  for (const cookie of [null,'session=mock']) {
+    const req=request('tools/call',{name:'update_feedback_status',arguments:{id:'123e4567-e89b-12d3-a456-426614174000',status:'Done'}});
+    if(cookie)req.headers.set('Cookie',cookie);
+    const res=await handleMcp(req,e);
+    assert.equal(res.status,401);
+    assert.match(res.headers.get('www-authenticate')||'',/resource_metadata=/);
+  }
   assert.equal(e.calls.length,0);
 });
-test('write tool rejects regular accounts and invalid IDs/statuses',async () => {
-  const id='123e4567-e89b-12d3-a456-426614174000';
-  const e=env([{id,status:'Inbox'}]);
-  const invalid=await (await handleMcp(request('tools/call',{name:'update_feedback_status',arguments:{id,status:'Shipped'}}),e)).json();
-  assert.equal(invalid.error.code,-32602);
-  const req=request('tools/call',{name:'update_feedback_status',arguments:{id,status:'Done'}});
-  req.headers.set('cookie','session=mock');
-  const regular=await (await handleMcp(req,e)).json();
-  assert.equal(regular.result.isError,true);
-  assert.match(regular.result.content[0].text,/Administrator access required/);
-  assert.equal(e.calls.length,0);
-});
-test('admin session may move exactly one existing card',async () => {
+test('feedback write inputs cannot modify anything except one card status',async () => {
   const id='123e4567-e89b-12d3-a456-426614174000';
   const e=env([{id,status:'Inbox'}],true);
-  const req=request('tools/call',{name:'update_feedback_status',arguments:{id,status:'Done'}});
-  req.headers.set('cookie','session=mock');
-  const response=await (await handleMcp(req,e)).json();
-  assert.equal(response.result.isError,false);
-  const payload=JSON.parse(response.result.content[0].text);
-  assert.deepEqual({ok:payload.ok,id:payload.id,status:payload.status},{ok:true,id,status:'Done'});
-  assert.deepEqual(e.calls.filter(c=>c.route==='/update').map(c=>({id:c.id,status:c.status})),[{id,status:'Done'}]);
-});
-test('write scope is only status of one existing Feedback card', async () => {
-  const id='123e4567-e89b-12d3-a456-426614174000';
-  const e=env([{id,status:'Inbox',message:'Original'}],true);
   const forbidden=[
-    {id,status:'Done',message:'Altered'},
-    {id,status:'Done',email:'leak@example.com'},
-    {id,status:'Done',site:'other'},
-    {id,status:'Done',action:'delete'},
-    {id,status:'Done',resource:'users'},
-    {id,status:'Done',target:'https://other.example'},
-    {id,status:'Done',updated_at:'2020-01-01'},
-    {id,status:'Done',create:true},
-    {id,status:'Done',admin:true},
-    {id,status:'Done',url:'https://auth.shauryaswebsites.com'},
-    {id,status:'Done',otherApp:'soccer-manager'},
-    {id:'../../users',status:'Done'},
-    {id,status:'Archived'}
+    {id,status:'Done',message:'Altered'}, {id,status:'Done',email:'leak@example.com'},
+    {id,status:'Done',site:'other'}, {id,status:'Done',action:'delete'},
+    {id,status:'Done',resource:'users'}, {id,status:'Done',target:'https://other.example'},
+    {id,status:'Done',updated_at:'2020-01-01'}, {id,status:'Done',create:true},
+    {id,status:'Done',admin:true}, {id,status:'Done',otherApp:'soccer-manager'},
+    {id:'../../users',status:'Done'}, {id,status:'Archived'}
   ];
-  for (const args of forbidden) {
-    const req=request('tools/call',{name:'update_feedback_status',arguments:args});
-    req.headers.set('cookie','session=mock');
-    const result=await (await handleMcp(req,e)).json();
-    assert.equal(result.error?.code,-32602,JSON.stringify(args));
+  for(const args of forbidden) {
+    const res=await (await handleMcp(request('tools/call',{name:'update_feedback_status',arguments:args}),e)).json();
+    assert.equal(res.error?.code,-32602);
   }
   assert.deepEqual(e.calls,[]);
-  const req=request('tools/call',{name:'update_feedback_status',arguments:{id:'123e4567-e89b-12d3-a456-426614174001',status:'Done'}});
-  req.headers.set('cookie','session=mock');
-  const missing=await (await handleMcp(req,e)).json();
-  assert.equal(missing.result.isError,true);
-  assert.match(missing.result.content[0].text,/not found/i);
-  assert.deepEqual(e.calls.filter(c=>c.route==='/update').map(c=>Object.keys(c).sort()),[['id','route','status']]);
+  const validReq=new Request('https://mcp.shauryaswebsites.com/mcp',{method:'POST',headers:{Authorization:'Bearer valid-in-test'}});
+  const result=await updateFeedbackStatus(e,{id,status:'Done'},validReq);
+  assert.equal(result.ok,true);
+  assert.deepEqual(e.calls.filter(c=>c.route==='/update').map(c=>({id:c.id,status:c.status})),[{id,status:'Done'}]);
 });
-test('write-only requests cannot invoke arbitrary tools or HTTP routes', async () => {
+test('current central admin permission is required for status updates',async () => {
+  const id='123e4567-e89b-12d3-a456-426614174000';
+  const req=new Request('https://mcp.shauryaswebsites.com/mcp',{method:'POST',headers:{Authorization:'Bearer valid-in-test'}});
+  const notAdmin=env([{id,status:'Inbox'}],false);
+  await assert.rejects(updateFeedbackStatus(notAdmin,{id,status:'Done'},req),/administrator/i);
+  assert.deepEqual(notAdmin.calls,[]);
+  const missing=env([],true);
+  await assert.rejects(updateFeedbackStatus(missing,{id,status:'Done'},req),/not found/i);
+});
+test('unknown write tools and HTTP paths remain unavailable',async () => {
   const e=env([],true);
   const req=request('tools/call',{name:'delete_feedback',arguments:{id:'123e4567-e89b-12d3-a456-426614174000'}});
-  req.headers.set('cookie','session=mock');
   const result=await (await handleMcp(req,e)).json();
   assert.equal(result.error.code,-32602);
   const http=await worker.fetch(new Request('https://mcp.shauryaswebsites.com/api/feedback/123e4567-e89b-12d3-a456-426614174000',{method:'PATCH'}),e);

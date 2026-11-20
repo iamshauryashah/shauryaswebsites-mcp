@@ -1,7 +1,8 @@
 name: Test Shaurya's Websites MCP
 on:
   push:
-    branches: [main]
+    branches: [main, feature/mcp-oauth]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read

@@ -52,6 +52,39 @@ The only MCP write tool is `update_feedback_status`. It accepts **exactly** two 
 
 Security tests reject extra arguments, invalid statuses/IDs, anonymous/nonadmin access, unknown write tools, and unexpected HTTP routes. This is a code-level capability boundary in the MCP, backed by the existing Feedback Durable Object's status-only update route. The Worker has direct access to that Durable Object, so the binding is broader than the MCP tool surface; a future stricter infrastructure boundary could route writes through a narrow authenticated Feedback service endpoint rather than exposing the underlying Durable Object binding.
 
+## OAuth 2.1 integration (feature branch — not deployed)
+
+The two existing public, email-free Feedback read tools remain unchanged.
+
+The sole write tool, `update_feedback_status`, accepts only an existing Feedback
+card UUID and one of the five status values. It never creates or deletes
+feedback and cannot modify game data, accounts, navigation, messages, emails,
+or other fields. A successful write also updates the row's `updated_at`
+timestamp automatically.
+
+OAuth discovery is served at `GET /.well-known/oauth-protected-resource`
+(and the `/mcp` alias) and advertises our existing Better Auth issuer:
+`https://auth.shauryaswebsites.com/api/auth`. For **every write request**,
+`createMcpProtectedRequestHandler` verifies:
+
+- JWT signature against the issuer JWKS
+- exact issuer and audience `https://mcp.shauryaswebsites.com/mcp`
+- OAuth access token type `at+jwt`, client identifier `azp`, expiry
+- requested `mcp:feedback.write` scope; DPoP when present
+
+The MCP then independently asks the central User Management Worker to verify
+the bearer token and check **current** platform administrator permissions.
+It refuses anonymous writes, fake bearer tokens, expired/wrong-resource tokens
+and nonadmin users. No arbitrary URL, app, SQL, or HTTP forwarding is exposed.
+
+**Deployment gate:** the matching `user-management` OAuth feature branch
+must first be reviewed, its additive D1 migration applied, and its issuer,
+sign-in and consent flow tested. Deploy User Management **before** enabling
+this resource-server branch. Then refresh the ChatGPT MCP connection with
+OAuth enabled. Existing public reads must continue to work throughout.
+
+See `MCP_OAUTH_ROLLOUT.md` in the `user-management` feature branch.
+
 ## Extensibility
 
 Add one new `TOOLS` entry per capability. Eventually the registry should be split into service-specific modules, as needed—not before. A future `rank_soccer_managers` could use a Touchline service binding, and protected capabilities would use centralized user authentication. **Keep separate services authoritative for their own data.**
