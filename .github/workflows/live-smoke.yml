@@ -32,7 +32,7 @@ jobs:
             -H 'accept: application/json, text/event-stream' \
             --data '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
             https://mcp.shauryaswebsites.com/mcp | tee /tmp/tools.json
-          python3 -c "import json; d=json.load(open('/tmp/tools.json')); assert [x['name'] for x in d['result']['tools']] == ['triage_all_new_feedback','list_feedback']"
+          python3 -c "import json; d=json.load(open('/tmp/tools.json')); assert [x['name'] for x in d['result']['tools']] == ['triage_all_new_feedback','list_feedback','update_feedback_status']"
       - name: Verify live Feedback access without printing submissions
         run: |
           set -euo pipefail
