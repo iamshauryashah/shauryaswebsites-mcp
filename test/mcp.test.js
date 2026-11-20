@@ -52,7 +52,7 @@ test('MCP initialize and tool listing', async () => {
   const initialized = await (await handleMcp(request('initialize', {}),e)).json();
   assert.equal(initialized.result.protocolVersion, '2025-06-18');
   const listing = await (await handleMcp(request('tools/list', {}),e)).json();
-  assert.deepEqual(listing.result.tools.map(t=>t.name), ['triage_all_new_feedback','list_feedback']);
+  assert.deepEqual(listing.result.tools.map(t=>t.name), ['triage_all_new_feedback','list_feedback','update_feedback_status']);
   assert.equal(listing.result.tools[0].annotations.readOnlyHint, true);
 });
 test('triage reads Inbox without exposing emails, across multiple pages', async () => {
