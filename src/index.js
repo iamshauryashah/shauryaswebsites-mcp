@@ -3,6 +3,10 @@
 const VERSION = '2025-06-18';
 const SERVER = { name: 'shauryaswebsites-mcp', version: '0.1.0' };
 const MAX_ITEMS = 2000;
+// RFC 9728 resource discovery. Authorization server lives in existing User Management.
+export const MCP_RESOURCE = 'https://mcp.shauryaswebsites.com/mcp';
+export const OAUTH_ISSUER = 'https://auth.shauryaswebsites.com/api/auth';
+export const OAUTH_METADATA_PATH = '/.well-known/oauth-protected-resource';
 const PAGE_SIZE = 200;
 const tool = {
   name: 'triage_all_new_feedback',
@@ -196,6 +200,14 @@ export async function handleMcp(request, env) {
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if ((path === OAUTH_METADATA_PATH || path === OAUTH_METADATA_PATH + '/mcp') && request.method === 'GET') {
+      return respond({
+        resource: MCP_RESOURCE,
+        authorization_servers: [OAUTH_ISSUER],
+        scopes_supported: ['mcp:feedback.write'],
+        bearer_methods_supported: ['header']
+      },200,{'access-control-allow-origin':'*'});
+    }
     if (path === '/health' && request.method === 'GET') return respond({ ok: true, service: SERVER.name, version: SERVER.version });
     if (path === '/mcp') return handleMcp(request, env);
     return respond({ error: 'Not found' }, 404);
