@@ -142,6 +142,48 @@ test('admin session may move exactly one existing card',async () => {
   assert.deepEqual({ok:payload.ok,id:payload.id,status:payload.status},{ok:true,id,status:'Done'});
   assert.deepEqual(e.calls.filter(c=>c.route==='/update').map(c=>({id:c.id,status:c.status})),[{id,status:'Done'}]);
 });
+test('write scope is only status of one existing Feedback card', async () => {
+  const id='123e4567-e89b-12d3-a456-426614174000';
+  const e=env([{id,status:'Inbox',message:'Original'}],true);
+  const forbidden=[
+    {id,status:'Done',message:'Altered'},
+    {id,status:'Done',email:'leak@example.com'},
+    {id,status:'Done',site:'other'},
+    {id,status:'Done',action:'delete'},
+    {id,status:'Done',resource:'users'},
+    {id,status:'Done',target:'https://other.example'},
+    {id,status:'Done',updated_at:'2020-01-01'},
+    {id,status:'Done',create:true},
+    {id,status:'Done',admin:true},
+    {id,status:'Done',url:'https://auth.shauryaswebsites.com'},
+    {id,status:'Done',otherApp:'soccer-manager'},
+    {id:'../../users',status:'Done'},
+    {id,status:'Archived'}
+  ];
+  for (const args of forbidden) {
+    const req=request('tools/call',{name:'update_feedback_status',arguments:args});
+    req.headers.set('cookie','session=mock');
+    const result=await (await handleMcp(req,e)).json();
+    assert.equal(result.error?.code,-32602,JSON.stringify(args));
+  }
+  assert.deepEqual(e.calls,[]);
+  const req=request('tools/call',{name:'update_feedback_status',arguments:{id:'123e4567-e89b-12d3-a456-426614174001',status:'Done'}});
+  req.headers.set('cookie','session=mock');
+  const missing=await (await handleMcp(req,e)).json();
+  assert.equal(missing.result.isError,true);
+  assert.match(missing.result.content[0].text,/not found/i);
+  assert.deepEqual(e.calls.filter(c=>c.route==='/update').map(c=>Object.keys(c).sort()),[['id','route','status']]);
+});
+test('write-only requests cannot invoke arbitrary tools or HTTP routes', async () => {
+  const e=env([],true);
+  const req=request('tools/call',{name:'delete_feedback',arguments:{id:'123e4567-e89b-12d3-a456-426614174000'}});
+  req.headers.set('cookie','session=mock');
+  const result=await (await handleMcp(req,e)).json();
+  assert.equal(result.error.code,-32602);
+  const http=await worker.fetch(new Request('https://mcp.shauryaswebsites.com/api/feedback/123e4567-e89b-12d3-a456-426614174000',{method:'PATCH'}),e);
+  assert.equal(http.status,404);
+  assert.deepEqual(e.calls,[]);
+});
 test('invalid tool, arguments and cross-site origins are rejected', async () => {
   const e=env();
   const unknown=await (await handleMcp(request('tools/call',{name:'delete_all_feedback'}),e)).json();
