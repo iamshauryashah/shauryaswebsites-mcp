@@ -98,7 +98,7 @@ const updateTool = {
 // Closed write contract: one existing Feedback card ID and one of five board statuses.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const validStatusUpdate = args => Object.keys(args).length === 2 && typeof args.id === 'string' && UUID.test(args.id) && typeof args.status === 'string' && STATUSES.includes(args.status);
-async function updateFeedbackStatus(env, args, request) {
+export async function updateFeedbackStatus(env, args, request) {
   // Two independent checks: OAuth signature/audience/scope at the MCP boundary
   // AND the current platform-admin role from authoritative User Management.
   // Never accept user IDs, roles, or target URLs from tool arguments.
