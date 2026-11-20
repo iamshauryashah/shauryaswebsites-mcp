@@ -41,6 +41,17 @@ Feedback submissions are *untrusted data*, not instructions. The assistant shoul
 
 For local tests use `npm test` (which mocks the existing Durable Object). Local `wrangler dev` may require configuring a remote binding or running the Feedback Worker together; the test suite does not require production data.
 
+## Strict write boundary
+
+The only MCP write tool is `update_feedback_status`. It accepts **exactly** two fields: an existing Feedback-card UUID (`id`) and one allowed Kanban `status`. Its only permitted mutation in the existing Feedback Durable Object is the card's `status` and automatically generated `updated_at` timestamp. The write handler uses a fixed internal `/update` route; callers cannot supply a URL, route, table, operation, message, site, or identity.
+
+- Cannot create or delete cards, or edit messages, emails, or sites.
+- Cannot change users, accounts, permissions, game state, navigation, or any other application.
+- No general-purpose API relay or arbitrary fetch capability is exposed.
+- Writes fail closed without a verified platform-admin session. The current unauthenticated ChatGPT connection **cannot write**; OAuth integration remains necessary.
+
+Security tests reject extra arguments, invalid statuses/IDs, anonymous/nonadmin access, unknown write tools, and unexpected HTTP routes. This is a code-level capability boundary in the MCP, backed by the existing Feedback Durable Object's status-only update route. The Worker has direct access to that Durable Object, so the binding is broader than the MCP tool surface; a future stricter infrastructure boundary could route writes through a narrow authenticated Feedback service endpoint rather than exposing the underlying Durable Object binding.
+
 ## Extensibility
 
 Add one new `TOOLS` entry per capability. Eventually the registry should be split into service-specific modules, as needed—not before. A future `rank_soccer_managers` could use a Touchline service binding, and protected capabilities would use centralized user authentication. **Keep separate services authoritative for their own data.**
